@@ -1,7 +1,7 @@
 from MultiLayerPerceptron import MultiLayerPerceptron
 import numpy as np
 
-mlp = MultiLayerPerceptron((2,2,1))
+mlp = MultiLayerPerceptron((2,2,1), hidden_activation="sigmoid", max_iters=10000, linear_factor=0.3, learning_rate=0.1, verbose=(True, 1000,))
 
 starting_weights = mlp.weights
 
