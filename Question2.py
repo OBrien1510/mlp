@@ -1,8 +1,10 @@
 import numpy as np
 from MultiLayerPerceptron import MultiLayerPerceptron
+from matplotlib import pyplot as plt
 
 input_vector = list()
 output_vector = list()
+output_file = "/home/hugh/connect_comp/ProgrammingAssignment/Task2.txt"
 
 def combine(x):
 
@@ -25,10 +27,19 @@ y_train = output_vector[index]
 x_test = input_vector[~index]
 y_test = output_vector[~index]
 
-mlp = MultiLayerPerceptron((4,10,1), hidden_activation="sigmoid", max_iters=5000, linear_factor=0.05, learning_rate=0.015,
-                           verbose=(True, 100))
+mlp = MultiLayerPerceptron((4,5,1), hidden_activation="sigmoid", max_iters=1000, linear_factor=1, learning_rate=0.3,
+                           verbose=(True, 100), weight_update=10)
 
-mlp.fit(x_train, y_train)
+errors = mlp.fit(x_train, y_train)
+
+plt.plot(errors, color="blue", label="Sigmoid + Linear")
+plt.title("Mean Squared Error Over Time")
+plt.xlabel("$Epochs$")
+plt.ylabel("$Error$")
+
+plt.legend()
+#plt.show()
+plt.savefig("/home/hugh/connect_comp/ProgrammingAssignment/Task2.png")
 
 errors = list()
 

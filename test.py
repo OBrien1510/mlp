@@ -1,15 +1,25 @@
 from MultiLayerPerceptron import MultiLayerPerceptron
 import numpy as np
+from matplotlib import pyplot as plt
 
-mlp = MultiLayerPerceptron((2,2,1), hidden_activation="sigmoid", max_iters=10000, linear_factor=0.3, learning_rate=0.1, verbose=(True, 1000,))
+output_file = "/home/hugh/connect_comp/ProgrammingAssignment/Task1.txt"
 
-starting_weights = mlp.weights
+mlp = MultiLayerPerceptron((2, 2, 1), hidden_activation="sigmoid", max_iters=10000, linear_factor=0.2, learning_rate=0.7,
+                           verbose=(True, 1000,), output_activation="linear", output_file=output_file)
+
 
 x = np.array([[1, 0], [0, 1], [0, 0], [1, 1]])
 y = np.array([1, 1, 0, 0])
 
-mlp.fit(x, y)
+errors = mlp.fit(x, y)
 
+plt.figure()
+plt.plot(errors, color="blue", label="Sigmoid + Linear")
+plt.title("Mean Squared Error Over Time")
+plt.xlabel("$Epochs$")
+plt.ylabel("$Error$")
+plt.show()
+#plt.savefig("/home/hugh/connect_comp/ProgrammingAssignment/Task1.png")
 
 print("1, 1")
 print(mlp.predict(np.array([1, 1])))
@@ -20,18 +30,5 @@ print(mlp.predict(np.array([0, 1])))
 print("1, 0")
 print(mlp.predict(np.array([1, 0])))
 
-#print(mlp.raw_neuron_inputs)
-
-final_weights = mlp.weights
-#print("weights @ start", starting_weights)
-print("weights @ end", final_weights)
-print("biases @ end", mlp.layer_biases)
-
-#print("inputs", mlp.neuron_inputs)
-
-#print("outputs", mlp.neuron_outputs)
-
-#print("errors", mlp.neuron_errors)
-
-mlp.to_str()
+#mlp.to_str()
 

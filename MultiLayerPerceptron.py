@@ -4,13 +4,15 @@ from scipy.special import softmax
 
 class MultiLayerPerceptron:
 
-    def __init__(self, layers=(2, 2, 1, ), hidden_activation="sigmoid", output_activation="linear", linear_factor=0.05, max_iters=20000, learning_rate=0.5, verbose=(True, 10,), weight_update=10, loss="mse", train=True):
+    def __init__(self, layers=(2, 2, 1, ), hidden_activation="sigmoid", output_activation="linear", linear_factor=0.05, max_iters=20000, learning_rate=0.5, verbose=(True, 10,), weight_update=10, loss="mse", train=True, output_file=None):
 
         self.layers = layers
+        self.output_file = output_file
         self.train = train
         self.no_input = layers[0]
         self.no_output = layers[len(layers)-1]
-        self.activation = output_activation
+        self.output_activation = output_activation
+        self.hidden_activation = hidden_activation
         self.hidden_activation_f, self.hidden_d_activation_f = self.get_activiation(hidden_activation)
         self.output_activation_f, self.output_d_activation_f = self.get_activiation(output_activation)
         self.linear_factor = linear_factor
@@ -28,24 +30,24 @@ class MultiLayerPerceptron:
         self.bias_changes = list()
         self.layer_biases = list()
         self.errors = list()
-        np.random.seed(3)
 
         # initialize all required arrays
         for i, layer in enumerate(layers[1:]):
             self.layer_biases.append(np.random.uniform(-0.1, 0.1, (layer,)))
             self.bias_changes.append(np.random.uniform(-0.1, 0.1, (layer,)))
-            self.weights.append(np.random.uniform(-0.1, 0.1, (layer, layers[i])))
-            self.weight_changes.append(np.zeros((layer, layers[i])))
+            self.weights.append(np.random.uniform(-0.1, 0.1, (layers[i], layer)))
+            self.weight_changes.append(np.zeros((layers[i], layer)))
             self.neuron_inputs.append(list())
             self.raw_neuron_inputs.append(list())
             self.neuron_outputs.append(list())
+
 
     def get_error(self, error):
 
         if error == "mse":
             return lambda x, y: 0.5*np.power((x-y), 2)
         else:
-            return lambda x, y: -(np.sum(y*np.log(x)))/len(x)
+            return lambda x, y: -1 * np.sum(y * (x + (-x.max() - np.log(np.sum(np.exp(x-x.max()))))))
 
     def get_activiation(self, activation):
 
@@ -61,6 +63,9 @@ class MultiLayerPerceptron:
 
             return lambda x: np.maximum(0, x), lambda x: np.maximum(0, x/np.absolute(x)) if x.any() > 0 else 0
 
+        if activation.lower() == "tanh":
+            return lambda x: np.sinh(x)/np.cosh(x), lambda x: 1 - (np.tanh(x)**2)
+
         else:
             return (None, None)
 
@@ -74,12 +79,20 @@ class MultiLayerPerceptron:
 
             y = self.prep_class(y)
 
-        self.gradient_descent(x, y)
+        return self.gradient_descent(x, y)
 
 
     def softmax(self, x):
 
         return softmax(x)
+
+    def relu(self, x):
+
+       return np.where(x > 0, x, x*0.01)
+
+    def relu_d(self,x ):
+
+        return np.where(x > 0, x, 0.01)
 
     def prep_class(self, y):
 
@@ -98,21 +111,16 @@ class MultiLayerPerceptron:
 
     def gradient_descent(self, x, y):
 
-        error = 1
-        iterations = 1
-        prediction = 0
-        i = 0
-        mean_error = 1
-        change_error = 1
+        iterations = 0
+        epoch_errors = list()
+        while iterations < self.max_iters:
 
-        while iterations <= self.max_iters:
-            #print(iterations)
             errors = list()
             for i in range(len(y)):
 
                 prediction = self.predict(x[i], train=True)
 
-                if self.activation != "softmax":
+                if self.output_activation != "softmax":
                     error = self.error_f(prediction, y[i])
                     backprop = (prediction-y[i])
                 else:
@@ -122,24 +130,28 @@ class MultiLayerPerceptron:
                     backprop = prediction - y[i]
                 errors.append(np.mean(error))
                 self.backpropagate(error, backprop, 0)
-
-            if iterations % self.weight_update == 0:
-                self.update_weights()
+                # update after every 2 examples
+                if i % 2 == 0:
+                    self.update_weights()
 
             if iterations % self.notification == 0 and self.verbose:
 
-                randint = random.randint(0, len(x)-1)
+                #randint = random.randint(0, len(x)-1)
                 print("Epoch #", iterations)
-                print("Random Sample:", y[randint])
-                print("Prediction of Sample", self.predict(x[randint], train=True))
-                change_error = abs(np.mean(error) - np.mean(errors))/np.mean(error)
+                #print("Random Sample:", (y[randint]))
+                #print("Prediction of Sample", self.predict(x[randint]))
                 mean_error = np.mean(errors)
                 print("Average error", mean_error)
-                #self.errors.append(mean_error)
+                if self.output_file is not None:
+                    with open(self.output_file, 'a+') as fh:
+                        fh.write("Epoch #{0}\n".format(iterations))
+                        mean_error = np.mean(errors)
+                        fh.write("Average error: {0:.16f}\n".format(mean_error))
 
-
-
+            epoch_errors.append(np.mean(errors))
             iterations += 1
+
+        return epoch_errors
 
 
     def reset(self):
@@ -165,7 +177,7 @@ class MultiLayerPerceptron:
 
             # treat the output layer differently from hidden layers
             output = self.neuron_outputs[-1]
-            if self.activation != "softmax":
+            if self.output_activation != "softmax":
                 derivative = self.output_d_activation_f(np.array(output[0]))
 
                 delta = total_error*derivative
@@ -174,37 +186,18 @@ class MultiLayerPerceptron:
 
                 delta = total_error
 
-            new_delta = list()
-
             # multiply delta by output of previous hidden layer
+            output = self.neuron_outputs[-2][0].reshape(self.neuron_outputs[-2][0].shape[0], 1)
+            x = np.dot(output, delta.reshape(1, delta.shape[0]))
 
-            # this following for loop is messy as a result of me trying to strong arm
-            # my algorithm to work with classification when it wasn't initially build with
-            # classification in mind
+            # get error for each hidden node for back propogation
+            y = np.dot(self.weights[-1], delta)
 
-            for i, output in enumerate(self.neuron_outputs[-2][0]):
+            self.weight_changes[-1] += x
+            self.bias_changes[-1] += delta
 
-                # weights are arranged by layer instead of by neuron, however for
-                # this case we want then to be arranged by neuron so reshape
-                weight_shape = self.weight_changes[-1].shape
-                print("original", self.weight_changes[-1][0])
-                temp_weight = self.weight_changes[-1].reshape(weight_shape[1], weight_shape[0])
-                print("temp", temp_weight[0])
-                temp_weight += output * delta
-                # reshape back to original for future compatability
-                temp_weight = temp_weight.reshape(weight_shape[0], weight_shape[1])
-
-                self.weight_changes[-1] = temp_weight
-                self.bias_changes[-1] += delta
-
-            weight_shape = self.weight_changes[-1].shape
-
-            for weight in self.weights[-1].reshape(weight_shape[1], weight_shape[0]):
-
-                new_delta.append(delta*weight)
-
-            # pass errors back to next layer according to current layers weights
-            self.backpropagate(np.array(new_delta), total_error, depth+1)
+            # pass errors back to next layer
+            self.backpropagate(y, total_error, depth+1)
 
         else:
 
@@ -212,25 +205,22 @@ class MultiLayerPerceptron:
 
             # deal with hidden layers
             current_n_layer = self.neuron_outputs[index][0]
-            current_in_layer = self.raw_neuron_inputs[index][0]
-            current_derivative = self.hidden_d_activation_f(current_n_layer)
+            current_in_layer = np.squeeze(self.raw_neuron_inputs[index][0][0])
+            if self.hidden_activation != "relu":
+                current_derivative = self.hidden_d_activation_f(current_n_layer)
+            else:
+                current_derivative = self.relu_d(current_n_layer)
 
-            # weights of current node * current node input * derivative of activation wrt to current node's output
-            # each element of current_w_layer represents a (2,) array
-            # the other two arrays are 1 dimensional
-            wxin = np.array([value * current_derivative[i] for i, value in enumerate(current_in_layer)])
+            x = current_derivative*delta
 
-            wxin_b = np.array([value for i, value in enumerate(current_derivative)])
+            y = np.dot(current_in_layer.reshape(current_in_layer.shape[0], 1), x.reshape(1, len(delta)))
 
-            # multiply each value by the error from the previous layer
-            error_transfer = np.sum(delta) * wxin
-            bias_change = np.sum(delta) * wxin_b
-
-            self.bias_changes[index] += bias_change
-            self.weight_changes[index] += error_transfer
+            self.bias_changes[index] += x
+            self.weight_changes[index] += y
 
             # pass layer's error to the next layer
-            self.backpropagate(sum(error_transfer), total_error, depth+1)
+            y = np.dot(self.weights[index], x)
+            self.backpropagate(y, total_error, depth+1)
 
 
     def update_weights(self):
@@ -252,42 +242,45 @@ class MultiLayerPerceptron:
 
         for i, layer in enumerate(self.weights):
 
-            #print("layer", layer)
-            self.raw_neuron_inputs[i].append(np.repeat(np.array([input]), [len(layer)], axis=0))
-
-            activation_inputs = layer.dot(input)
+            input = input.reshape(input.shape[0], 1)
+            self.raw_neuron_inputs[i].append(np.repeat(np.array([input]), [self.layers[i+1]], axis=0))
+            activation_inputs = layer.T.dot(input)
 
             self.neuron_inputs[i].append(activation_inputs)
 
             # if layer is a a hidden layer
             if i != len(self.weights)-1:
 
-                activation_outputs = self.hidden_activation_f(activation_inputs + self.layer_biases[i])
-
+                if self.hidden_activation != "relu":
+                    activation_outputs = self.hidden_activation_f(activation_inputs.T[0] + self.layer_biases[i])
+                else:
+                    activation_outputs = self.relu(activation_inputs.T[0] + self.layer_biases[i])
 
             else:
 
-                if self.activation != "softmax":
+                activation_inputs = activation_inputs.reshape(len(activation_inputs))
+
+                if self.output_activation != "softmax":
+
                     activation_outputs = self.output_activation_f(activation_inputs + self.layer_biases[i])
                 else:
+
                     activation_outputs = self.softmax(activation_inputs + self.layer_biases[i])
 
-            #print("outputs", activation_outputs)
             self.neuron_outputs[i].append(activation_outputs)
 
             input = activation_outputs
 
         if train:
-            return activation_outputs
 
+            return activation_outputs
         else:
             if self.layers[-1] > 1:
-                #print(activation_outputs)
+
                 prediction = np.max(activation_outputs)
                 return self.unique[list(activation_outputs).index(prediction)]
             else:
                 return activation_outputs
-
 
     def to_str(self):
 
